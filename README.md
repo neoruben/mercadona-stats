@@ -21,3 +21,17 @@ Aplicación Android (Kotlin + Jetpack Compose) que lee los tickets digitales PDF
 
 ## Privacidad
 Todos los tickets y estadísticas se procesan y almacenan exclusivamente en el dispositivo del usuario (SQLite local). No se envían datos a servidores de terceros.
+
+## Arquitectura y detalles técnicos
+- **Base de datos (`data/TicketDatabaseHelper.kt`):** SQLite (`mercadona_tickets.db`, versión 1) con tablas `tickets` (cabecera, `total_amount`, `total_vat_amount`, `ticket_number`, `pdf_sha256`, `gmail_message_id`), `ticket_items` (`quantity`, `unit`, `description`, `unit_price`, `total_price`) y `ticket_vat`.
+- **Parser (`parser/MercadonaTicketParser.kt`):** Extrae la cabecera y las líneas entre `Cnt./Cant.` y `TOTAL (€)` soportando castellano y catalán, unidades (`ITEM_LINE_WITH_UNIT_PRICE`, `ITEM_LINE_SINGLE`) y productos al peso (`WEIGHT_LINE_REGEX`, asociando la descripción de la línea anterior).
+- **Cálculo de estadísticas (`stats/StatsCalculator.kt`):**
+  - El **Gasto Total** y las gráficas mensuales/semanales suman el `total_amount` oficial de cada ticket (`TOTAL (€)`).
+  - **Ranking de productos (`productStats`):** Agrupa `ticket_items` normalizando `description` (`trim`, espacios colapsados, `uppercase(Locale.ROOT)`) y acumula `totalQuantity` (unidades o `kg`), `purchaseCount` (nº de tickets distintos en los que aparece) y `totalAmount` (€).
+- **Interfaz (`ui/MercadonaAppUi.kt`):** Tres pestañas inferiores:
+  1. `Tickets`: sincronización Gmail / importación PDF y listado.
+  2. `Estadísticas`: KPIs globales y gráficas por mes / semana.
+  3. `Productos` (desde `v1.1`, `versionCode = 2`): alterna entre **Más comprados** (`purchaseCount` → `totalQuantity` → `totalAmount`) y **Mayor importe** (`totalAmount`), con buscador por nombre y barra proporcional.
+
+## Documentación técnica
+Consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para ver el detalle de la arquitectura, el parser PDF, el esquema SQLite, la configuración OAuth y los comandos de compilación y pruebas.
