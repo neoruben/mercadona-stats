@@ -208,7 +208,7 @@ class MainActivity : ComponentActivity() {
 
                 if (newIds.isEmpty()) {
                     syncProgress = null
-                    statusMessage = "Todo al día: los ${allIds.size} correos ya estaban en SQLite."
+                    statusMessage = "Todo al día: ya tienes tus ${allIds.size} tickets guardados."
                     return@launch
                 }
 
