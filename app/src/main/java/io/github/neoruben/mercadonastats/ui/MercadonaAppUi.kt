@@ -145,7 +145,7 @@ fun MercadonaMainScaffold(
                 ) {
                     Column {
                         Text(
-                            text = "Mercadona Stats",
+                            text = "MercaStats",
                             style = MaterialTheme.typography.titleLarge,
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold
