@@ -1,4 +1,8 @@
-# MercaStats
+<p align="center">
+  <img src="docs/icon.png" width="128" alt="MercaStats icon">
+</p>
+
+<h1 align="center">MercaStats</h1>
 
 <p align="center">
   <a href="https://ko-fi.com/neoruben" target="_blank">
