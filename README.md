@@ -8,6 +8,10 @@
 
 Aplicación Android (Kotlin + Jetpack Compose) que lee los tickets digitales PDF de Mercadona desde Gmail (solo lectura) o mediante importación directa de archivos PDF, los guarda en una base de datos SQLite local evitando duplicados y muestra estadísticas de gasto semanal, mensual y por producto.
 
+<p align="center">
+  <img src="docs/screenshots/mercastats_screens_horizontal.png" alt="MercaStats: Tickets, Estadísticas y Productos" width="900">
+</p>
+
 ---
 
 ## Características
