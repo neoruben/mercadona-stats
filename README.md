@@ -1,6 +1,10 @@
 # MercaStats
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/neoruben)
+<p align="center">
+  <a href="https://ko-fi.com/neoruben" target="_blank">
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" height="38">
+  </a>
+</p>
 
 Aplicación Android (Kotlin + Jetpack Compose) que lee los tickets digitales PDF de Mercadona desde Gmail (solo lectura) o mediante importación directa de archivos PDF, los guarda en una base de datos SQLite local evitando duplicados y muestra estadísticas de gasto semanal, mensual y por producto.
 
