@@ -1,6 +1,8 @@
 package io.github.neoruben.mercadonastats
 
 import android.app.Activity
+import android.content.ContentResolver
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -13,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
@@ -92,6 +95,9 @@ class MainActivity : ComponentActivity() {
         if (prefs.getBoolean(KEY_AUTO_SYNC_ENABLED, false)) {
             trySilentAutoSync()
         }
+        if (savedInstanceState == null) {
+            handleSharedPdfIntent(intent)
+        }
 
         setContent {
             MaterialTheme {
@@ -121,6 +127,34 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleSharedPdfIntent(intent)
+    }
+
+    /** Imports PDFs received through "Share" (SEND / SEND_MULTIPLE) or "Open with" (VIEW). */
+    private fun handleSharedPdfIntent(intent: Intent?) {
+        if (intent == null) return
+        val uris: List<Uri> = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            )
+            Intent.ACTION_SEND_MULTIPLE ->
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                    .orEmpty()
+            Intent.ACTION_VIEW -> intent.data
+                ?.takeIf { it.scheme == ContentResolver.SCHEME_CONTENT || it.scheme == ContentResolver.SCHEME_FILE }
+                ?.let { listOf(it) }
+                .orEmpty()
+            else -> emptyList()
+        }
+        if (uris.isEmpty()) return
+        // Consume the intent so a recreation doesn't import the same files again.
+        intent.action = null
+        importLocalPdfs(uris)
     }
 
     private fun reloadFromDatabase() {
