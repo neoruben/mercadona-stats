@@ -10,7 +10,7 @@
   </a>
 </p>
 
-Aplicación Android (Kotlin + Jetpack Compose) que lee los tickets digitales PDF de Mercadona desde Gmail (solo lectura), desde cualquier correo por IMAP o mediante importación directa de archivos PDF, los guarda en una base de datos SQLite local evitando duplicados y muestra estadísticas de gasto semanal, mensual y por producto.
+Aplicación Android (Kotlin + Jetpack Compose) que lee los tickets digitales PDF de Mercadona desde tu correo por IMAP (Gmail, iCloud u otro proveedor), desde Gmail con inicio de sesión de Google o mediante importación directa de archivos PDF. Los guarda en una base de datos SQLite local evitando duplicados y muestra estadísticas de gasto semanal, mensual y por producto.
 
 <p align="center">
   <img src="docs/screenshots/mercastats_screens_horizontal.png" alt="MercaStats: Tickets, Estadísticas y Productos" width="900">
@@ -18,25 +18,36 @@ Aplicación Android (Kotlin + Jetpack Compose) que lee los tickets digitales PDF
 
 ---
 
+## Novedades de la versión 1.2.0
+
+- **Ahora se recomienda IMAP para importar los tickets del correo.** Hasta ahora la importación automática solo funcionaba con el inicio de sesión de Google (OAuth). Esa vía exige que el autor dé de alta tu Gmail como «usuario de prueba» en Google Cloud, y solo sirve para Gmail. Con IMAP basta una **contraseña de aplicación** de tu correo: funciona con Gmail, iCloud y otros proveedores, sin pedir permiso a nadie. Ver [Correo por IMAP](#correo-por-imap).
+- **Histórico de precios por producto:** en la pestaña **Productos**, pulsa un producto para ver una gráfica de cómo ha cambiado su precio (por unidad, o por kg si se vende a peso), con el último precio, el mínimo, el máximo, la variación y la lista de compras.
+- **La importación sigue con la pantalla apagada:** corre en segundo plano con una notificación de progreso, y si se corta la conexión vuelve a conectar sola.
+- **Ayuda en la propia app** para crear la contraseña de aplicación de Gmail e iCloud, con un botón a la página donde se crea.
+- **Las cuentas de Outlook y Hotmail no son compatibles**, porque Microsoft ya no admite IMAP con contraseña en las cuentas personales. La app lo avisa al escribir un correo de ese tipo.
+- **El inicio de sesión con Google sigue disponible** para quien ya lo usaba. Si guardas una cuenta IMAP, la app usa IMAP en su lugar.
+
+---
+
 ## Características
 
-- **Sincronización con Gmail (OAuth 2.0 solo lectura):** Busca correos de `ticket_digital@mail.mercadona.com` mediante `AuthorizationClient` nativo de Google Play Services y descarga únicamente los correos nuevos.
-  - *Nota:* Requiere que la cuenta de correo donde se reciben los tickets digitales de Mercadona sea de **Gmail** o Google Workspace.
-- **Correo por IMAP (cualquier proveedor, sin Google Cloud):** Conecta tu correo con una **contraseña de aplicación** y elige la carpeta o etiqueta donde guardas los tickets. Funciona con Gmail, iCloud y cualquier correo con IMAP. Ver [Correo por IMAP](#correo-por-imap).
+- **Correo por IMAP (recomendado, sin Google Cloud):** Conecta tu correo con una **contraseña de aplicación** y elige la carpeta o etiqueta donde guardas los tickets. Funciona con Gmail, iCloud y cualquier correo con IMAP, salvo Outlook/Hotmail. Descarga solo los correos nuevos y sigue en segundo plano aunque apagues la pantalla. Ver [Correo por IMAP](#correo-por-imap).
+- **Inicio de sesión con Google (alternativa, OAuth 2.0 solo lectura):** Busca los correos de `ticket_digital@mail.mercadona.com` con el `AuthorizationClient` de Google Play Services. Solo sirve para Gmail o Google Workspace, y en la APK publicada requiere que tu correo esté dado de alta como usuario de prueba. Ver [Inicio de sesión con Google](#inicio-de-sesión-con-google-alternativa).
 - **Importación manual de PDFs (100% offline y sin cuenta de Google):** Si prefieres no conectar ningún correo, puedes descargar los PDFs y cargarlos directamente desde el almacenamiento del móvil, o compartirlos con la app desde otra aplicación.
-- **Sincronización automática silenciosa:** Tras la primera conexión (Gmail o IMAP), actualiza los tickets nuevos de forma silenciosa al abrir la app.
+- **Sincronización automática al abrir la app:** Tras la primera conexión (IMAP o Google), busca los tickets nuevos cada vez que abres la app. Si hay una cuenta IMAP guardada, tiene prioridad.
 - **Parser PDF offline:** Extrae tienda, dirección, fecha/hora, número de factura simplificada, líneas de producto (unidades y peso) y desglose de IVA usando `pdfbox-android`, sin OCR ni servicios externos.
 - **Base de datos SQLite local:** Almacena tickets, productos e IVA evitando duplicados por número de ticket, hash SHA-256 del PDF e identificador del correo.
 - **Estadísticas y visualización:**
   - Tickets agrupados por mes desplegable con total mensual y diálogo de detalle individual.
   - Gráfica de barras con desglose de gasto por mes y por semana.
   - Ranking de productos por frecuencia de compra y gasto acumulado con buscador y medallas Top 3.
+  - Histórico de precios de cada producto: al pulsarlo, gráfica de evolución (se puede tocar cada punto), último precio, mínimo, máximo, variación y compras con la subida o bajada respecto a la anterior.
 
 ---
 
 ## Correo por IMAP
 
-Es la forma más sencilla de importar los tickets automáticamente: no necesita Google Cloud ni ser «usuario de prueba», y sirve para cualquier correo con IMAP.
+Es la forma recomendada desde la versión 1.2.0 para importar los tickets automáticamente: no necesita Google Cloud ni ser «usuario de prueba», y sirve para cualquier correo con IMAP.
 
 1. Crea una **contraseña de aplicación** en tu cuenta de correo (no es tu contraseña normal):
    - **Gmail:** necesitas tener activada la verificación en dos pasos. Entra en [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), crea una llamada `MercaStats` y copia los 16 caracteres.
@@ -58,9 +69,9 @@ La app solo **lee** los correos de `ticket_digital@mail.mercadona.com`: no borra
 
 ---
 
-## Sincronización y Configuración de OAuth
+## Inicio de sesión con Google (alternativa)
 
-La aplicación utiliza la API de Gmail en modo de solo lectura (`gmail.readonly`).
+Era la única forma de importar los tickets automáticamente antes de la versión 1.2.0, y se mantiene para quien ya la usa. Usa la API de Gmail en modo de solo lectura (`gmail.readonly`). Si no estás ya dado de alta como usuario de prueba, usa [IMAP](#correo-por-imap), que no tiene esta limitación.
 
 ### Si utilizas el APK precompilado (Releases)
 Al tratarse de una aplicación privada/en fase de pruebas que no está publicada en la Play Store:
@@ -94,7 +105,7 @@ Todos los tickets, productos y estadísticas se procesan y almacenan exclusivame
 - **Interfaz (`ui/MercadonaAppUi.kt`):** Tres pestañas inferiores:
   1. `Tickets`: sincronización Gmail o IMAP / importación PDF y listado.
   2. `Estadísticas`: KPIs globales y gráficas por mes / semana.
-  3. `Productos`: alterna entre **Más comprados** (`purchaseCount` → `totalQuantity` → `totalAmount`) y **Mayor importe** (`totalAmount`), con buscador por nombre y barra proporcional.
+  3. `Productos`: alterna entre **Más comprados** (`purchaseCount` → `totalQuantity` → `totalAmount`) y **Mayor importe** (`totalAmount`), con buscador por nombre y barra proporcional. Al pulsar un producto se abre `ProductPriceDialog` con su histórico de precios (`priceHistory`).
 
 Consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para más detalles sobre la arquitectura interna y la guía de compilación. Si trabajas con un agente de código (Claude Code, Codex, Antigravity…), las instrucciones del proyecto están en [AGENTS.md](AGENTS.md).
 

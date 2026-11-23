@@ -18,6 +18,20 @@ val reversedClientIdScheme = if (defaultClientId.endsWith(".apps.googleuserconte
     "io.github.neoruben.mercadonastats.oauth"
 }
 
+// Firma de la release: local.properties indica dónde está keystore.properties (fuera del repositorio),
+// con storeFile, storePassword, keyAlias y keyPassword. Sin él, la release se genera sin firmar.
+val releaseKeystorePropsFile = localProps.getProperty("RELEASE_KEYSTORE_PROPERTIES")
+    ?.trim()
+    ?.let { File(it) }
+    ?.takeIf { it.exists() }
+val releaseKeystoreProps = releaseKeystorePropsFile?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
+}
+// Si la ruta de storeFile no existe (p. ej. escrita con otro nombre de usuario), se busca junto a keystore.properties.
+val releaseStoreFile = releaseKeystoreProps?.getProperty("storeFile")?.trim()?.let { path ->
+    File(path).takeIf { it.exists() } ?: File(releaseKeystorePropsFile!!.parentFile, File(path).name)
+}
+
 android {
     namespace = "io.github.neoruben.mercadonastats"
     compileSdk = 35
@@ -26,11 +40,22 @@ android {
         applicationId = "io.github.neoruben.mercadonastats"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1.3"
+        versionCode = 6
+        versionName = "1.2.0"
 
         buildConfigField("String", "DEFAULT_GMAIL_CLIENT_ID", "\"$defaultClientId\"")
         manifestPlaceholders["oauthRedirectScheme"] = reversedClientIdScheme
+    }
+
+    signingConfigs {
+        if (releaseKeystoreProps != null && releaseStoreFile?.exists() == true) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = releaseKeystoreProps.getProperty("storePassword")
+                keyAlias = releaseKeystoreProps.getProperty("keyAlias")
+                keyPassword = releaseKeystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -42,6 +67,7 @@ android {
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

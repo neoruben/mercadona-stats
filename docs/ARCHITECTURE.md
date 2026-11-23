@@ -36,11 +36,12 @@ Este documento resume cómo está construida **MercaStats**, cómo funcionan sus
     - Tablas: `tickets`, `ticket_items` (`ON DELETE CASCADE`), `ticket_vat` (`ON DELETE CASCADE`) e `imap_seen_messages` (versión 2 de la base de datos; `onUpgrade` la crea al actualizar desde la versión 1).
     - Prevención de duplicados mediante restricciones `UNIQUE` en `ticket_number`, `pdf_sha256` y `gmail_message_id`.
     - `deleteTicketsWithoutItems()`: limpia tickets que pudieran haberse guardado sin líneas para re-parsearlos al sincronizar.
-  - `stats/StatsCalculator.kt`: Calcula el resumen global (total, ticket medio, IVA soportado, nº de compras), agrupación por **mes** (`YYYY-MM`), agrupación por **semana ISO** (`YYYY-Www`) y ranking de **productos** (frecuencia, unidades/kg y gasto acumulado).
+  - `stats/StatsCalculator.kt`: Calcula el resumen global (total, ticket medio, IVA soportado, nº de compras), agrupación por **mes** (`YYYY-MM`), agrupación por **semana ISO** (`YYYY-Www`) y ranking de **productos** (frecuencia, unidades/kg y gasto acumulado). Cada `ProductSpendStat` lleva además `priceHistory`: un `PricePoint(dateTimeIso, unitPrice)` por ticket en el que aparece, del más antiguo al más reciente. El precio es el unitario del ticket (€/kg en productos a peso) o, si falta, `totalPrice / quantity` (`unitPriceOf`). Si el producto se repite en un mismo ticket, solo cuenta la primera línea.
   - `ui/MercadonaAppUi.kt`: Interfaz Jetpack Compose con 3 pestañas:
     1. **Tickets:** Estado de conexión Gmail, botones de sincronización e importación PDF, y listado agrupado por **meses desplegables** (cabecera verde con total mensual y tarjetas blancas por compra con diálogo de detalle completo).
     2. **Estadísticas:** 4 KPIs, selector *Mes / Semana*, gráfica de barras con degradado y listado histórico.
-    3. **Productos:** Buscador, selector *Frecuencia / Gasto*, medallas Top 3 y barra proporcional.
+    3. **Productos:** Buscador, selector *Frecuencia / Gasto*, medallas Top 3 y barra proporcional. Al pulsar un producto se abre el histórico de precios.
+  - `ui/ProductPriceDialog.kt`: Diálogo del histórico de precios. Muestra un resumen (último, mínimo, máximo, variación desde la primera compra) y una gráfica de línea dibujada con `Canvas`, sin librerías externas: el eje X es proporcional a la fecha, hay líneas guía en el mínimo y el máximo, y al tocarla se selecciona el punto más cercano. Debajo, la lista de compras con la subida (▲, rojo) o bajada (▼, verde) respecto a la compra anterior. Con una sola compra no dibuja la gráfica.
 
 ---
 
@@ -88,7 +89,7 @@ Este documento resume cómo está construida **MercaStats**, cómo funcionan sus
 
 ## 4. Compilación, tests y publicación
 
-- **Compilar APK debug** (con el wrapper local, que no está versionado, o con un Gradle instalado):
+- **Compilar APK debug** (con el wrapper versionado, Gradle 9.9.2; la CI usa el mismo):
   ```powershell
   ./gradlew :app:assembleDebug
   ```
@@ -96,11 +97,12 @@ Este documento resume cómo está construida **MercaStats**, cómo funcionan sus
 - **Versión debug:** se instala como `io.github.neoruben.mercadonastats.debug`, aparte de la release. El inicio de sesión con Google no funciona en ella; IMAP y PDF sí. Si `adb install -r` falla con `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, la debug instalada está firmada con otra clave: hay que desinstalarla, lo que borra sus datos.
 - **Tests unitarios:**
   - `MercadonaTicketParserTest` (formatos catalán, castellano, producto al peso y cabecera partida).
-  - `StatsCalculatorTest` (agregación semanal ISO y mensual).
+  - `StatsCalculatorTest` (agregación semanal ISO y mensual, e histórico de precios por producto).
   - `ImapMessagePartsTest` (PDF adjunto, PDF con tipo genérico, correo reenviado, varios adjuntos, sin PDF e identificador del correo).
 - **GitHub Actions (`.github/workflows/android.yml`):** en cada subida ejecuta los tests y compila la APK de depuración, que queda descargable como artefacto `MercaStats-debug-apk` durante 14 días en la pestaña **Actions**.
   - Nota en Windows: si la ruta de `%USERPROFILE%\.gradle` contiene caracteres no ASCII y el worker de Gradle falla al lanzar `GradleWorkerMain`, se pueden compilar con `gradle compileDebugUnitTestKotlin` y ejecutar directamente con `java -cp ... org.junit.runner.JUnitCore`.
 - **Privacidad en Git:**
   - `.gitignore` excluye `local.properties`, `samples/*.pdf`, `*.apk`, `*.keystore`, `*.jks`, `.gradle/` y `build/`.
+- **APK release firmada:** `./gradlew :app:assembleRelease`. La firma se configura fuera del repositorio: `local.properties` apunta con `RELEASE_KEYSTORE_PROPERTIES` a un `keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Si `storeFile` no existe en esa ruta, se busca junto al `.properties`. Sin configuración, la release sale sin firmar.
 - **Publicación de APKs:**
   - Subir los binarios compilados a **GitHub Releases** siguiendo la convención `MercaStats-v.x.x.x.apk` (incrementando `versionCode` y `versionName` en `app/build.gradle.kts`).

@@ -1140,6 +1140,13 @@ private fun TicketDetailDialog(
 private fun ProductsTabContent(products: List<ProductSpendStat>) {
     var sortTab by remember { mutableIntStateOf(0) } // 0 = Más comprados, 1 = Mayor importe
     var searchQuery by remember { mutableStateOf("") }
+    var selectedProductKey by remember { mutableStateOf<String?>(null) }
+
+    selectedProductKey
+        ?.let { key -> products.firstOrNull { it.productKey == key } }
+        ?.let { product ->
+            ProductPriceDialog(product = product, onDismiss = { selectedProductKey = null })
+        }
 
     val filtered = remember(products, searchQuery, sortTab) {
         val q = searchQuery.trim()
@@ -1205,6 +1212,7 @@ private fun ProductsTabContent(products: List<ProductSpendStat>) {
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         placeholder = { Text("Buscar producto (ej. llet, pollo...)") },
+                        supportingText = { Text("Pulsa un producto para ver cómo ha cambiado su precio.") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Search,
@@ -1288,6 +1296,7 @@ private fun ProductsTabContent(products: List<ProductSpendStat>) {
                 }
 
                 Card(
+                    onClick = { selectedProductKey = product.productKey },
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, CardBorder)

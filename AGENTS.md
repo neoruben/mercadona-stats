@@ -1,6 +1,7 @@
 # AGENTS.md — Guía para agentes de código (Claude Code, Codex, Antigravity…)
 
 Este archivo es la referencia común para cualquier agente que trabaje en el repositorio.
+**El estado del trabajo en curso y los siguientes pasos están en [PENDIENTE.md](PENDIENTE.md): léelo al empezar y actualízalo al terminar.**
 `CLAUDE.md` y `GEMINI.md` solo lo importan: **edita aquí** y no dupliques contenido en ellos.
 Para el detalle de cada pieza, consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Lo que ve el usuario está en el [README.md](README.md).
 
@@ -33,9 +34,9 @@ app/src/main/java/io/github/neoruben/mercadonastats/
   gmail/                   Cliente REST de Gmail y OAuth
   mail/                    IMAP: conexión, partes MIME, ajustes y contraseña cifrada (Keystore)
   parser/                  Extracción de texto del PDF (pdfbox-android) y parser del ticket
-  stats/                   Agregados por mes, semana y producto
+  stats/                   Agregados por mes, semana y producto, e histórico de precios
   sync/                    Sincronización IMAP en segundo plano (servicio, importador, estado)
-  ui/                      Compose: pestañas y formulario IMAP
+  ui/                      Compose: pestañas, formulario IMAP e histórico de precios (ProductPriceDialog)
 app/src/test/              Tests JVM (parser, estadísticas, partes MIME de IMAP)
 samples/                   PDFs personales de prueba (ignorados por git, NO subir)
 docs/ARCHITECTURE.md       Guía técnica detallada
@@ -53,9 +54,11 @@ y SDK en `C:\Android\Sdk`, indicado en `local.properties`.
 ```
 
 - **Ejecuta siempre `assembleDebug`, no solo la compilación de Kotlin.** Algunos fallos solo aparecen al pasar a DEX (ver «Trampas»).
-- El wrapper de Gradle (`gradlew`, `gradle/wrapper/`, 9.6.0) existe en local pero **no está versionado**.
-  La CI usa Gradle 9.9.2 con `gradle/actions/setup-gradle`. Si añades o actualizas el wrapper, alinea las dos versiones.
-- Versiones: AGP 9.5.1, Kotlin (plugin Compose) 2.2.10, compileSdk/targetSdk 35, minSdk 26, Java 17.
+- El wrapper de Gradle (`gradlew`, `gradle/wrapper/`, Gradle 9.9.2) está versionado y lo usan tanto las máquinas
+  locales como la CI. Para cambiar de versión: `./gradlew wrapper --gradle-version X --gradle-distribution-sha256-sum <suma>`
+  (la suma está en https://gradle.org/release-checksums).
+- Gradle se ejecuta con Java 25 (`gradle/gradle-daemon-jvm.properties`, igual que el JBR de Android Studio); la CI instala JDK 25.
+- Versiones: AGP 9.5.1, Kotlin (plugin Compose) 2.2.10, compileSdk/targetSdk 35, minSdk 26, bytecode Java 17.
 - **CI** (`.github/workflows/android.yml`): en cada push ejecuta los tests y genera la APK debug como artefacto
   `MercaStats-debug-apk`. Consulta el estado con `gh run list --branch <rama>`.
 
@@ -112,5 +115,12 @@ y **`return@launch` cruzando un `try`** (`NullPointerException` / «Invalid stac
 
 - Rama principal `main`. Trabaja en ramas de funcionalidad (por ejemplo, `imap`) y abre PR a `main`.
 - Haz commit o push solo cuando el usuario lo pida.
-- Versiones: `versionCode` y `versionName` en `app/build.gradle.kts`. Las APK se publican en GitHub Releases como `MercaStats-vX.Y.Z.apk`.
+- Versiones: `versionCode` y `versionName` en `app/build.gradle.kts`. Las APK se publican en GitHub Releases como `MercaStats-v.X.Y.Z.apk` (con punto tras la «v», como las anteriores).
+- **APK release firmada:** `./gradlew :app:assembleRelease` genera `app/build/outputs/apk/release/app-release.apk`.
+  Se firma sola si `local.properties` tiene `RELEASE_KEYSTORE_PROPERTIES=<ruta a keystore.properties>` (fuera del repo,
+  con `storeFile`, `storePassword`, `keyAlias` y `keyPassword`). Si la ruta de `storeFile` no existe, se busca el keystore
+  junto a ese archivo. Sin esa línea, la release sale sin firmar.
+  **No leas, muestres ni copies las contraseñas** de ese archivo: Gradle las lee directamente.
+  Comprueba la firma con `apksigner verify --print-certs` (en `build-tools`): el certificado debe ser el mismo que el de
+  la release anterior, o la actualización no se instalará encima.
 - Al cambiar comportamiento visible, actualiza el README (usuario) y `docs/ARCHITECTURE.md` (técnico). Si cambias una regla o trampa, actualiza este archivo.
