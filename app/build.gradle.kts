@@ -34,6 +34,12 @@ android {
     }
 
     buildTypes {
+        // La versión de pruebas se instala como app aparte, sin tocar la instalada ni sus tickets.
+        // (El inicio de sesión con Google no funciona en ella; IMAP y PDF sí.)
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
         }
@@ -47,6 +53,13 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    packaging {
+        resources {
+            // Licencias duplicadas de Jakarta Mail / Activation
+            excludes += setOf("META-INF/LICENSE.md", "META-INF/NOTICE.md")
+        }
     }
 }
 
@@ -67,6 +80,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // IMAP (misma librería que la versión Docker)
+    implementation("org.eclipse.angus:jakarta.mail:2.0.5")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.apache.pdfbox:pdfbox:2.0.32")

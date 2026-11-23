@@ -83,16 +83,16 @@ import io.github.neoruben.mercadonastats.stats.ProductSpendStat
 import io.github.neoruben.mercadonastats.stats.SpendSummary
 import java.util.Locale
 
-private val MercadonaGreenDark = Color(0xFF005C26)
-private val MercadonaGreen = Color(0xFF007A33)
-private val MercadonaGreenBright = Color(0xFF009E44)
-private val MercadonaGreenSoft = Color(0xFFE9F5EE)
-private val MercadonaAmber = Color(0xFFD97706)
-private val MercadonaAmberSoft = Color(0xFFFEF3C7)
-private val BackgroundScreen = Color(0xFFF5F7F6)
-private val CardBorder = Color(0xFFE4EAE6)
-private val TextPrimary = Color(0xFF142119)
-private val TextSecondary = Color(0xFF5D6D63)
+internal val MercadonaGreenDark = Color(0xFF005C26)
+internal val MercadonaGreen = Color(0xFF007A33)
+internal val MercadonaGreenBright = Color(0xFF009E44)
+internal val MercadonaGreenSoft = Color(0xFFE9F5EE)
+internal val MercadonaAmber = Color(0xFFD97706)
+internal val MercadonaAmberSoft = Color(0xFFFEF3C7)
+internal val BackgroundScreen = Color(0xFFF5F7F6)
+internal val CardBorder = Color(0xFFE4EAE6)
+internal val TextPrimary = Color(0xFF142119)
+internal val TextSecondary = Color(0xFF5D6D63)
 
 data class SyncProgress(
     val current: Int,
@@ -105,11 +105,13 @@ fun MercadonaMainScaffold(
     tickets: List<StoredTicket>,
     summary: SpendSummary,
     isGmailConnected: Boolean,
+    imapAccount: String?,
     syncProgress: SyncProgress?,
     statusMessage: String?,
     errorMessage: String?,
     onSyncGmailClick: () -> Unit,
     onDisconnectGmailClick: () -> Unit,
+    onImapSettingsClick: () -> Unit,
     onImportLocalPdfsClick: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -227,11 +229,13 @@ fun MercadonaMainScaffold(
                 0 -> TicketsTabContent(
                     tickets = tickets,
                     isGmailConnected = isGmailConnected,
+                    imapAccount = imapAccount,
                     syncProgress = syncProgress,
                     statusMessage = statusMessage,
                     errorMessage = errorMessage,
                     onSyncGmailClick = onSyncGmailClick,
                     onDisconnectGmailClick = onDisconnectGmailClick,
+                    onImapSettingsClick = onImapSettingsClick,
                     onImportLocalPdfsClick = onImportLocalPdfsClick,
                     onTicketClick = { selectedTicketDetail = it }
                 )
@@ -253,15 +257,25 @@ fun MercadonaMainScaffold(
 private fun TicketsTabContent(
     tickets: List<StoredTicket>,
     isGmailConnected: Boolean,
+    imapAccount: String?,
     syncProgress: SyncProgress?,
     statusMessage: String?,
     errorMessage: String?,
     onSyncGmailClick: () -> Unit,
     onDisconnectGmailClick: () -> Unit,
+    onImapSettingsClick: () -> Unit,
     onImportLocalPdfsClick: () -> Unit,
     onTicketClick: (StoredTicket) -> Unit
 ) {
     val isSyncing = syncProgress != null
+    // Si hay una cuenta IMAP guardada, es la que se usa para sincronizar.
+    val usesImap = imapAccount != null
+    val isConnected = usesImap || isGmailConnected
+    val connectionText = when {
+        usesImap -> "Correo: $imapAccount"
+        isGmailConnected -> "Gmail conectado (solo lectura)"
+        else -> "Correo sin conectar"
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -287,6 +301,7 @@ private fun TicketsTabContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f, fill = false),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -294,16 +309,28 @@ private fun TicketsTabContent(
                                 modifier = Modifier
                                     .size(10.dp)
                                     .clip(CircleShape)
-                                    .background(if (isGmailConnected) MercadonaGreenBright else Color(0xFFB0BEC5))
+                                    .background(if (isConnected) MercadonaGreenBright else Color(0xFFB0BEC5))
                             )
                             Text(
-                                text = if (isGmailConnected) "Gmail conectado (solo lectura)" else "Gmail sin conectar",
+                                text = connectionText,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isGmailConnected) MercadonaGreen else TextSecondary
+                                color = if (isConnected) MercadonaGreen else TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                        if (isGmailConnected) {
+                        if (usesImap) {
+                            Text(
+                                text = "Ajustes",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = TextSecondary,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable(enabled = !isSyncing, onClick = onImapSettingsClick)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        } else if (isGmailConnected) {
                             Text(
                                 text = "Desconectar",
                                 style = MaterialTheme.typography.labelMedium,
@@ -335,7 +362,7 @@ private fun TicketsTabContent(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isGmailConnected) "Sincronizar" else "Conectar Gmail",
+                                text = if (isConnected) "Sincronizar" else "Conectar Gmail",
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -356,6 +383,18 @@ private fun TicketsTabContent(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("PDF", color = MercadonaGreen, fontWeight = FontWeight.SemiBold)
                         }
+                    }
+
+                    if (!usesImap) {
+                        Text(
+                            text = "¿Otro correo o una etiqueta concreta? Conectar por IMAP",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MercadonaGreen,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isSyncing, onClick = onImapSettingsClick)
+                                .padding(vertical = 4.dp)
+                        )
                     }
 
                     if (syncProgress != null) {
@@ -464,7 +503,7 @@ private fun TicketsTabContent(
                             color = TextPrimary
                         )
                         Text(
-                            text = "Pulsa \"Conectar Gmail\" o \"PDF\" para importar tus compras de Mercadona.",
+                            text = "Pulsa \"Conectar Gmail\", conecta tu correo por IMAP o usa \"PDF\" para importar tus compras de Mercadona.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                             textAlign = TextAlign.Center

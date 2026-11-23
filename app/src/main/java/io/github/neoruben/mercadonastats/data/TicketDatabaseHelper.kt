@@ -43,11 +43,12 @@ class TicketDatabaseHelper(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DATABASE_NAME = "mercadona_tickets.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         private const val TABLE_TICKETS = "tickets"
         private const val TABLE_ITEMS = "ticket_items"
         private const val TABLE_VAT = "ticket_vat"
+        private const val TABLE_IMAP_SEEN = "imap_seen_messages"
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -106,9 +107,49 @@ class TicketDatabaseHelper(context: Context) : SQLiteOpenHelper(
         db.execSQL("CREATE INDEX idx_tickets_date ON $TABLE_TICKETS(date_time_iso DESC)")
         db.execSQL("CREATE INDEX idx_items_ticket ON $TABLE_ITEMS(ticket_id)")
         db.execSQL("CREATE INDEX idx_vat_ticket ON $TABLE_VAT(ticket_id)")
+        createImapSeenTable(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createImapSeenTable(db)
+        }
+    }
+
+    /**
+     * Correos IMAP ya revisados (se haya guardado su ticket o fuese un duplicado de otro
+     * importado por Gmail o PDF), para no volver a descargarlos en cada sincronización.
+     */
+    private fun createImapSeenTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_IMAP_SEEN (
+                message_id TEXT PRIMARY KEY,
+                seen_at_ms INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+
+    fun getSeenImapMessageIds(): Set<String> {
+        val ids = mutableSetOf<String>()
+        readableDatabase.rawQuery("SELECT message_id FROM $TABLE_IMAP_SEEN", null).use { cursor ->
+            while (cursor.moveToNext()) ids.add(cursor.getString(0))
+        }
+        return ids
+    }
+
+    fun markImapMessageSeen(messageId: String) {
+        val values = ContentValues().apply {
+            put("message_id", messageId)
+            put("seen_at_ms", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict(TABLE_IMAP_SEEN, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+    }
+
+    fun clearSeenImapMessages() {
+        writableDatabase.delete(TABLE_IMAP_SEEN, null, null)
+    }
 
     fun getKnownGmailMessageIds(): Set<String> {
         val ids = mutableSetOf<String>()
