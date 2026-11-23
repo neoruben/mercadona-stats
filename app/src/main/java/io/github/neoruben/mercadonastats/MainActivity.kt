@@ -25,7 +25,9 @@ import io.github.neoruben.mercadonastats.data.StoredTicket
 import io.github.neoruben.mercadonastats.data.TicketDatabaseHelper
 import io.github.neoruben.mercadonastats.gmail.GmailMercadonaService
 import io.github.neoruben.mercadonastats.gmail.GmailOAuthManager
+import io.github.neoruben.mercadonastats.mail.ImapMailbox
 import io.github.neoruben.mercadonastats.mail.ImapMercadonaService
+import io.github.neoruben.mercadonastats.mail.MercadonaMail
 import io.github.neoruben.mercadonastats.mail.ImapSettings
 import io.github.neoruben.mercadonastats.mail.ImapSettingsStore
 import io.github.neoruben.mercadonastats.parser.MercadonaTicketParser
@@ -36,7 +38,9 @@ import io.github.neoruben.mercadonastats.ui.ImapSettingsDialog
 import io.github.neoruben.mercadonastats.ui.ImapSettingsInput
 import io.github.neoruben.mercadonastats.ui.MercadonaMainScaffold
 import io.github.neoruben.mercadonastats.ui.SyncProgress
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -383,77 +387,93 @@ class MainActivity : ComponentActivity() {
         statusMessage = null
         syncProgress = SyncProgress(0, 0, "Conectando con ${settings.host}...")
 
+        // Sin llamadas suspend dentro de bloques finally ni return@launch cruzando un try:
+        // esa combinación hacía que Kotlin generase bytecode que D8 no sabe procesar.
         lifecycleScope.launch {
             try {
-                val mailbox = withContext(Dispatchers.IO) { imapService.open(settings) }
-                try {
-                    syncProgress = SyncProgress(0, 0, "Buscando tickets en «${settings.folder}»...")
-                    val allMails = withContext(Dispatchers.IO) { mailbox.findMercadonaMails() }
-                    if (allMails.isEmpty()) {
-                        statusMessage = "No hay correos de Mercadona en «${settings.folder}»."
-                        return@launch
-                    }
-
-                    withContext(Dispatchers.IO) { dbHelper.deleteTicketsWithoutItems() }
-                    val known = withContext(Dispatchers.IO) {
-                        dbHelper.getKnownGmailMessageIds() + dbHelper.getSeenImapMessageIds()
-                    }
-                    val pending = allMails.filterNot { it.id in known }
-                    if (pending.isEmpty()) {
-                        statusMessage = "Todo al día: ${allMails.size} correos revisados, sin tickets nuevos."
-                        return@launch
-                    }
-
-                    var inserted = 0
-                    var duplicates = 0
-                    var failed = 0
-
-                    pending.forEachIndexed { index, mail ->
-                        syncProgress = SyncProgress(
-                            current = index + 1,
-                            total = pending.size,
-                            message = "Importando ${index + 1} de ${pending.size} correos nuevos..."
-                        )
-                        try {
-                            val pdfs = withContext(Dispatchers.IO) { mailbox.readPdfs(mail) }
-                            if (pdfs.isEmpty()) {
-                                // Un correo sin PDF no va a cambiar: no volver a descargarlo.
-                                failed++
-                                withContext(Dispatchers.IO) { dbHelper.markImapMessageSeen(mail.id) }
-                            } else {
-                                pdfs.forEachIndexed { pdfIndex, (_, bytes) ->
-                                    val id = if (pdfIndex == 0) mail.id else "${mail.id}#$pdfIndex"
-                                    when (parseAndSavePdfBytes(bytes, gmailMessageId = id)) {
-                                        InsertTicketStatus.INSERTED -> inserted++
-                                        else -> duplicates++
-                                    }
-                                }
-                                withContext(Dispatchers.IO) { dbHelper.markImapMessageSeen(mail.id) }
-                            }
-                        } catch (e: Exception) {
-                            // No se marca como revisado: se reintentará en la próxima sincronización.
-                            Log.w("MercadonaImap", "Error procesando un correo: ${e.message}")
-                            failed++
-                        }
-                    }
-
-                    statusMessage = buildString {
-                        append("Sincronización completada: $inserted nuevos")
-                        if (duplicates > 0) append(", $duplicates ya estaban guardados")
-                        if (failed > 0) append(", $failed sin PDF válido")
-                    }
-                } finally {
-                    withContext(Dispatchers.IO) { mailbox.close() }
-                }
+                statusMessage = importFromImap(settings)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 errorMessage = ImapMercadonaService.friendly(e, settings.host).message
-            } finally {
-                val refreshed = withContext(Dispatchers.IO) { dbHelper.getAllTickets() }
-                tickets = refreshed
-                spendSummary = StatsCalculator.calculate(refreshed)
-                syncProgress = null
+            }
+            val refreshed = withContext(Dispatchers.IO) { dbHelper.getAllTickets() }
+            tickets = refreshed
+            spendSummary = StatsCalculator.calculate(refreshed)
+            syncProgress = null
+        }
+    }
+
+    /** Conecta, importa los correos nuevos y cierra la conexión. Devuelve el mensaje de estado. */
+    private suspend fun importFromImap(settings: ImapSettings): String {
+        val mailbox = withContext(Dispatchers.IO) { imapService.open(settings) }
+        val result = runCatching { importFromMailbox(mailbox, settings) }
+        withContext(NonCancellable + Dispatchers.IO) { runCatching { mailbox.close() } }
+        return result.getOrThrow()
+    }
+
+    private suspend fun importFromMailbox(mailbox: ImapMailbox, settings: ImapSettings): String {
+        syncProgress = SyncProgress(0, 0, "Buscando tickets en «${settings.folder}»...")
+        val allMails = withContext(Dispatchers.IO) { mailbox.findMercadonaMails() }
+        if (allMails.isEmpty()) {
+            return "No hay correos de Mercadona en «${settings.folder}»."
+        }
+
+        withContext(Dispatchers.IO) { dbHelper.deleteTicketsWithoutItems() }
+        val known = withContext(Dispatchers.IO) {
+            dbHelper.getKnownGmailMessageIds() + dbHelper.getSeenImapMessageIds()
+        }
+        val pending = allMails.filterNot { it.id in known }
+        if (pending.isEmpty()) {
+            return "Todo al día: ${allMails.size} correos revisados, sin tickets nuevos."
+        }
+
+        var inserted = 0
+        var duplicates = 0
+        var failed = 0
+
+        for ((index, mail) in pending.withIndex()) {
+            syncProgress = SyncProgress(
+                current = index + 1,
+                total = pending.size,
+                message = "Importando ${index + 1} de ${pending.size} correos nuevos..."
+            )
+            val outcome = runCatching { importMail(mailbox, mail) }
+            outcome.exceptionOrNull()?.let { e ->
+                if (e is CancellationException) throw e
+                // No se marca como revisado: se reintentará en la próxima sincronización.
+                Log.w("MercadonaImap", "Error procesando un correo: ${e.message}")
+                failed++
+            }
+            outcome.getOrNull()?.let { (newOnes, repeated) ->
+                if (newOnes == 0 && repeated == 0) failed++
+                inserted += newOnes
+                duplicates += repeated
             }
         }
+
+        return buildString {
+            append("Sincronización completada: $inserted nuevos")
+            if (duplicates > 0) append(", $duplicates ya estaban guardados")
+            if (failed > 0) append(", $failed sin PDF válido")
+        }
+    }
+
+    /** Importa los PDF de un correo y lo marca como revisado. Devuelve (nuevos, duplicados). */
+    private suspend fun importMail(mailbox: ImapMailbox, mail: MercadonaMail): Pair<Int, Int> {
+        val pdfs = withContext(Dispatchers.IO) { mailbox.readPdfs(mail) }
+        var inserted = 0
+        var duplicates = 0
+        for ((pdfIndex, pdf) in pdfs.withIndex()) {
+            val id = if (pdfIndex == 0) mail.id else "${mail.id}#$pdfIndex"
+            when (parseAndSavePdfBytes(pdf.second, gmailMessageId = id)) {
+                InsertTicketStatus.INSERTED -> inserted++
+                else -> duplicates++
+            }
+        }
+        // Un correo sin PDF no va a cambiar: también se marca para no volver a descargarlo.
+        withContext(Dispatchers.IO) { dbHelper.markImapMessageSeen(mail.id) }
+        return inserted to duplicates
     }
 
     private fun importLocalPdfs(uris: List<Uri>) {
