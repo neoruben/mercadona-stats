@@ -41,11 +41,16 @@ Es la forma más sencilla de importar los tickets automáticamente: no necesita 
 1. Crea una **contraseña de aplicación** en tu cuenta de correo (no es tu contraseña normal):
    - **Gmail:** necesitas tener activada la verificación en dos pasos. Entra en [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), crea una llamada `MercaStats` y copia los 16 caracteres.
    - **iCloud:** en [account.apple.com](https://account.apple.com), **Inicio de sesión y seguridad** → **Contraseñas específicas de la app** → genera una nueva.
+   - **Outlook / Hotmail / Live:** no funcionan. Desde septiembre de 2024 Microsoft no admite IMAP con contraseña (ni con contraseña de aplicación) en las cuentas personales, solo con inicio de sesión OAuth. Reenvía los tickets a otro correo o comparte los PDF con la app.
    - **Otros proveedores:** busca «contraseña de aplicación» o «IMAP» en la ayuda de tu correo.
+
+   La propia app explica estos pasos al elegir Gmail o iCloud, con un botón que abre la página donde se crea la contraseña.
 2. En la app, en la pestaña **Tickets**, pulsa **«¿Otro correo o una etiqueta concreta? Conectar por IMAP»**.
 3. Escribe tu correo y la contraseña de aplicación. Para Gmail e iCloud el servidor se rellena solo; si usas otro, escribe su servidor IMAP (por ejemplo, `imap.ejemplo.com`).
 4. En **Carpeta o etiqueta**, deja `INBOX` (la bandeja de entrada) o escribe la carpeta donde guardas los tickets. Las etiquetas de Gmail se escriben con su nombre, y si están dentro de otra con `/` (por ejemplo, `Tickets/Mercadona`). La etiqueta tiene que tener activado **«Mostrar en IMAP»** en la configuración de Gmail. Si la carpeta no existe, la app te dice cuáles hay.
 5. Pulsa **Guardar y sincronizar**. La app comprueba la conexión, guarda los datos y descarga los tickets.
+
+La importación sigue aunque se apague la pantalla o salgas de la app: corre en segundo plano con una notificación de progreso, y si se corta la conexión vuelve a conectar sola.
 
 A partir de ahí, **Sincronizar** y la sincronización al abrir la app usan esta cuenta. Para cambiarla o borrarla, pulsa **Ajustes** junto a tu correo (**Olvidar esta cuenta** borra los datos de acceso; tus tickets se conservan).
 
@@ -85,12 +90,13 @@ Todos los tickets, productos y estadísticas se procesan y almacenan exclusivame
   - El **Gasto Total** y las gráficas mensuales/semanales suman el `total_amount` oficial de cada ticket (`TOTAL (€)`).
   - **Ranking de productos (`productStats`):** Agrupa `ticket_items` normalizando `description` (`trim`, espacios colapsados, `uppercase(Locale.ROOT)`) y acumula `totalQuantity` (unidades o `kg`), `purchaseCount` (nº de tickets distintos en los que aparece) y `totalAmount` (€).
 - **Correo IMAP (`mail/`):** `ImapMercadonaService` (conexión TLS en solo lectura con Jakarta Mail), `ImapMessageParts` (extracción de PDFs e identificador estable de cada correo) e `ImapSettingsStore` (cuenta guardada, contraseña cifrada con Android Keystore).
+- **Sincronización en segundo plano (`sync/`):** `ImapSyncService` (servicio en primer plano con notificación de progreso), `ImapTicketImporter` (importación con reconexión automática) e `ImapSyncBus` (estado que observa la pantalla).
 - **Interfaz (`ui/MercadonaAppUi.kt`):** Tres pestañas inferiores:
   1. `Tickets`: sincronización Gmail o IMAP / importación PDF y listado.
   2. `Estadísticas`: KPIs globales y gráficas por mes / semana.
   3. `Productos`: alterna entre **Más comprados** (`purchaseCount` → `totalQuantity` → `totalAmount`) y **Mayor importe** (`totalAmount`), con buscador por nombre y barra proporcional.
 
-Consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para más detalles sobre la arquitectura interna y la guía de compilación.
+Consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para más detalles sobre la arquitectura interna y la guía de compilación. Si trabajas con un agente de código (Claude Code, Codex, Antigravity…), las instrucciones del proyecto están en [AGENTS.md](AGENTS.md).
 
 ---
 

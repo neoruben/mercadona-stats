@@ -2,6 +2,7 @@ package io.github.neoruben.mercadonastats.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -91,6 +93,17 @@ fun ImapSettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary
                 )
+
+                if (ImapProvider.isMicrosoftPersonal(email)) {
+                    NoticeBox(
+                        text = "Outlook y Hotmail no funcionan por IMAP: desde septiembre de 2024 " +
+                            "Microsoft no deja entrar con contraseña (ni con contraseña de aplicación) en " +
+                            "las cuentas personales. Puedes reenviar los tickets de Mercadona a un Gmail o " +
+                            "iCloud, o compartir los PDF con la app.",
+                        background = Color(0xFFFFF3E0),
+                        foreground = Color(0xFF8A4B00)
+                    )
+                }
 
                 OutlinedTextField(
                     value = email,
@@ -153,6 +166,10 @@ fun ImapSettingsDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                ImapProvider.fromHost(host)?.let { provider ->
+                    AppPasswordHelp(provider)
+                }
+
                 OutlinedTextField(
                     value = folder,
                     onValueChange = { folder = it },
@@ -169,16 +186,7 @@ fun ImapSettingsDialog(
                 )
 
                 if (!error.isNullOrBlank()) {
-                    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFFFEBEE)) {
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFFB71C1C),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        )
-                    }
+                    NoticeBox(text = error, background = Color(0xFFFFEBEE), foreground = Color(0xFFB71C1C))
                 }
 
                 if (current != null) {
@@ -195,7 +203,12 @@ fun ImapSettingsDialog(
                         ImapSettingsInput(
                             host = host.trim(),
                             email = email.trim(),
-                            password = password,
+                            // Google muestra la contraseña en grupos de 4 letras separados por espacios.
+                            password = if (host == ImapProvider.GMAIL.host) {
+                                password.filterNot { it.isWhitespace() }
+                            } else {
+                                password
+                            },
                             folder = folder.trim()
                         )
                     )
@@ -225,4 +238,55 @@ fun ImapSettingsDialog(
             }
         }
     )
+}
+
+/** Pasos para crear la contraseña de aplicación del proveedor elegido, plegados por defecto. */
+@Composable
+private fun AppPasswordHelp(provider: ImapProvider) {
+    var expanded by remember(provider) { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFFF1F8E9)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
+                Text(
+                    text = (if (expanded) "▾ " else "▸ ") + "Cómo crear la contraseña de ${provider.label}",
+                    color = MercadonaGreen,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (expanded) {
+                provider.passwordSteps.forEachIndexed { index, step ->
+                    Text(
+                        text = "${index + 1}. $step",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+                TextButton(
+                    onClick = { runCatching { uriHandler.openUri(provider.passwordUrl) } },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text("Abrir la página de ${provider.label}", color = MercadonaGreen)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoticeBox(text: String, background: Color, foreground: Color) {
+    Surface(shape = RoundedCornerShape(10.dp), color = background) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = foreground,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        )
+    }
 }

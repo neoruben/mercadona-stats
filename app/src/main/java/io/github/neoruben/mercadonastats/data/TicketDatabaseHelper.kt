@@ -49,6 +49,15 @@ class TicketDatabaseHelper(context: Context) : SQLiteOpenHelper(
         private const val TABLE_ITEMS = "ticket_items"
         private const val TABLE_VAT = "ticket_vat"
         private const val TABLE_IMAP_SEEN = "imap_seen_messages"
+
+        @Volatile
+        private var instance: TicketDatabaseHelper? = null
+
+        /** Instancia única: la pantalla y el servicio de sincronización comparten la conexión. */
+        fun get(context: Context): TicketDatabaseHelper =
+            instance ?: synchronized(this) {
+                instance ?: TicketDatabaseHelper(context.applicationContext).also { instance = it }
+            }
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
