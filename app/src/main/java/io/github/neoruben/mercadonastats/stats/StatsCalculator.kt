@@ -1,6 +1,7 @@
 package io.github.neoruben.mercadonastats.stats
 
 import io.github.neoruben.mercadonastats.data.StoredTicket
+import io.github.neoruben.mercadonastats.parser.ParsedTicketItem
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -15,13 +16,21 @@ data class PeriodSpendStat(
     val ticketCount: Int
 )
 
+/** Precio pagado por un producto en una compra (por unidad, o por kg si se vende a peso). */
+data class PricePoint(
+    val dateTimeIso: String, // YYYY-MM-DD HH:mm
+    val unitPrice: Double
+)
+
 data class ProductSpendStat(
     val productKey: String,
     val displayName: String,
     val unit: String?,
     val totalQuantity: Double,
     val purchaseCount: Int,
-    val totalAmount: Double
+    val totalAmount: Double,
+    /** Un punto por ticket, del más antiguo al más reciente. */
+    val priceHistory: List<PricePoint> = emptyList()
 )
 
 data class SpendSummary(
@@ -91,6 +100,9 @@ object StatsCalculator {
                 }
                 if (seenInThisTicket.add(normalized)) {
                     acc.purchaseCount += 1
+                    unitPriceOf(item)?.let { price ->
+                        acc.priceHistory += PricePoint(ticket.dateTimeIso, price)
+                    }
                 }
             }
 
@@ -140,7 +152,8 @@ object StatsCalculator {
                 unit = acc.unit,
                 totalQuantity = acc.totalQuantity,
                 purchaseCount = acc.purchaseCount,
-                totalAmount = acc.totalAmount
+                totalAmount = acc.totalAmount,
+                priceHistory = acc.priceHistory.toList()
             )
         }.sortedByDescending { it.totalAmount }
 
@@ -155,11 +168,22 @@ object StatsCalculator {
         )
     }
 
+    /**
+     * Precio unitario de una línea: el que indica el ticket (o el €/kg en productos a peso) o,
+     * si no viene, el total entre la cantidad. `null` si no se puede calcular.
+     */
+    internal fun unitPriceOf(item: ParsedTicketItem): Double? {
+        val price = item.unitPrice
+            ?: if (item.quantity > 0) item.totalPrice / item.quantity else null
+        return price?.takeIf { it > 0 && it.isFinite() }
+    }
+
     private class ProductAccumulator(
         val displayName: String,
         var unit: String?,
         var totalQuantity: Double = 0.0,
         var purchaseCount: Int = 0,
-        var totalAmount: Double = 0.0
+        var totalAmount: Double = 0.0,
+        val priceHistory: MutableList<PricePoint> = mutableListOf()
     )
 }

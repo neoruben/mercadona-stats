@@ -83,16 +83,16 @@ import io.github.neoruben.mercadonastats.stats.ProductSpendStat
 import io.github.neoruben.mercadonastats.stats.SpendSummary
 import java.util.Locale
 
-private val MercadonaGreenDark = Color(0xFF005C26)
-private val MercadonaGreen = Color(0xFF007A33)
-private val MercadonaGreenBright = Color(0xFF009E44)
-private val MercadonaGreenSoft = Color(0xFFE9F5EE)
-private val MercadonaAmber = Color(0xFFD97706)
-private val MercadonaAmberSoft = Color(0xFFFEF3C7)
-private val BackgroundScreen = Color(0xFFF5F7F6)
-private val CardBorder = Color(0xFFE4EAE6)
-private val TextPrimary = Color(0xFF142119)
-private val TextSecondary = Color(0xFF5D6D63)
+internal val MercadonaGreenDark = Color(0xFF005C26)
+internal val MercadonaGreen = Color(0xFF007A33)
+internal val MercadonaGreenBright = Color(0xFF009E44)
+internal val MercadonaGreenSoft = Color(0xFFE9F5EE)
+internal val MercadonaAmber = Color(0xFFD97706)
+internal val MercadonaAmberSoft = Color(0xFFFEF3C7)
+internal val BackgroundScreen = Color(0xFFF5F7F6)
+internal val CardBorder = Color(0xFFE4EAE6)
+internal val TextPrimary = Color(0xFF142119)
+internal val TextSecondary = Color(0xFF5D6D63)
 
 data class SyncProgress(
     val current: Int,
@@ -104,12 +104,12 @@ data class SyncProgress(
 fun MercadonaMainScaffold(
     tickets: List<StoredTicket>,
     summary: SpendSummary,
-    isGmailConnected: Boolean,
+    imapAccount: String?,
     syncProgress: SyncProgress?,
     statusMessage: String?,
     errorMessage: String?,
-    onSyncGmailClick: () -> Unit,
-    onDisconnectGmailClick: () -> Unit,
+    onSyncClick: () -> Unit,
+    onImapSettingsClick: () -> Unit,
     onImportLocalPdfsClick: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -226,12 +226,12 @@ fun MercadonaMainScaffold(
             when (selectedTab) {
                 0 -> TicketsTabContent(
                     tickets = tickets,
-                    isGmailConnected = isGmailConnected,
+                    imapAccount = imapAccount,
                     syncProgress = syncProgress,
                     statusMessage = statusMessage,
                     errorMessage = errorMessage,
-                    onSyncGmailClick = onSyncGmailClick,
-                    onDisconnectGmailClick = onDisconnectGmailClick,
+                    onSyncClick = onSyncClick,
+                    onImapSettingsClick = onImapSettingsClick,
                     onImportLocalPdfsClick = onImportLocalPdfsClick,
                     onTicketClick = { selectedTicketDetail = it }
                 )
@@ -252,16 +252,18 @@ fun MercadonaMainScaffold(
 @Composable
 private fun TicketsTabContent(
     tickets: List<StoredTicket>,
-    isGmailConnected: Boolean,
+    imapAccount: String?,
     syncProgress: SyncProgress?,
     statusMessage: String?,
     errorMessage: String?,
-    onSyncGmailClick: () -> Unit,
-    onDisconnectGmailClick: () -> Unit,
+    onSyncClick: () -> Unit,
+    onImapSettingsClick: () -> Unit,
     onImportLocalPdfsClick: () -> Unit,
     onTicketClick: (StoredTicket) -> Unit
 ) {
     val isSyncing = syncProgress != null
+    val isConnected = imapAccount != null
+    val connectionText = if (isConnected) "Correo: $imapAccount" else "Correo sin conectar"
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -287,6 +289,7 @@ private fun TicketsTabContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f, fill = false),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -294,23 +297,25 @@ private fun TicketsTabContent(
                                 modifier = Modifier
                                     .size(10.dp)
                                     .clip(CircleShape)
-                                    .background(if (isGmailConnected) MercadonaGreenBright else Color(0xFFB0BEC5))
+                                    .background(if (isConnected) MercadonaGreenBright else Color(0xFFB0BEC5))
                             )
                             Text(
-                                text = if (isGmailConnected) "Gmail conectado (solo lectura)" else "Gmail sin conectar",
+                                text = connectionText,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                color = if (isGmailConnected) MercadonaGreen else TextSecondary
+                                color = if (isConnected) MercadonaGreen else TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                        if (isGmailConnected) {
+                        if (isConnected) {
                             Text(
-                                text = "Desconectar",
+                                text = "Ajustes",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = TextSecondary,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .clickable(onClick = onDisconnectGmailClick)
+                                    .clickable(enabled = !isSyncing, onClick = onImapSettingsClick)
                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
@@ -321,7 +326,7 @@ private fun TicketsTabContent(
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
-                            onClick = onSyncGmailClick,
+                            onClick = onSyncClick,
                             enabled = !isSyncing,
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MercadonaGreen),
@@ -335,7 +340,7 @@ private fun TicketsTabContent(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isGmailConnected) "Sincronizar" else "Conectar Gmail",
+                                text = if (isConnected) "Sincronizar" else "Conectar correo",
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -464,7 +469,7 @@ private fun TicketsTabContent(
                             color = TextPrimary
                         )
                         Text(
-                            text = "Pulsa \"Conectar Gmail\" o \"PDF\" para importar tus compras de Mercadona.",
+                            text = "Pulsa \"Conectar correo\" o usa \"PDF\" para importar tus compras de Mercadona.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                             textAlign = TextAlign.Center
@@ -1101,6 +1106,13 @@ private fun TicketDetailDialog(
 private fun ProductsTabContent(products: List<ProductSpendStat>) {
     var sortTab by remember { mutableIntStateOf(0) } // 0 = Más comprados, 1 = Mayor importe
     var searchQuery by remember { mutableStateOf("") }
+    var selectedProductKey by remember { mutableStateOf<String?>(null) }
+
+    selectedProductKey
+        ?.let { key -> products.firstOrNull { it.productKey == key } }
+        ?.let { product ->
+            ProductPriceDialog(product = product, onDismiss = { selectedProductKey = null })
+        }
 
     val filtered = remember(products, searchQuery, sortTab) {
         val q = searchQuery.trim()
@@ -1166,6 +1178,7 @@ private fun ProductsTabContent(products: List<ProductSpendStat>) {
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         placeholder = { Text("Buscar producto (ej. llet, pollo...)") },
+                        supportingText = { Text("Pulsa un producto para ver cómo ha cambiado su precio.") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Rounded.Search,
@@ -1249,6 +1262,7 @@ private fun ProductsTabContent(products: List<ProductSpendStat>) {
                 }
 
                 Card(
+                    onClick = { selectedProductKey = product.productKey },
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = BorderStroke(1.dp, CardBorder)

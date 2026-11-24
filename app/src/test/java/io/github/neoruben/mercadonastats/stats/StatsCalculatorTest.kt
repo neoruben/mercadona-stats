@@ -1,6 +1,7 @@
 package io.github.neoruben.mercadonastats.stats
 
 import io.github.neoruben.mercadonastats.data.StoredTicket
+import io.github.neoruben.mercadonastats.parser.ParsedTicketItem
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -50,5 +51,38 @@ class StatsCalculatorTest {
         assertEquals(50.00, summary.weeklyStats[1].totalAmount, 0.001)
         assertEquals("2026-W46", summary.weeklyStats[2].periodKey)
         assertEquals(50.00, summary.weeklyStats[2].totalAmount, 0.001)
+    }
+
+    @Test
+    fun buildsPriceHistoryPerProductOrderedByDate() {
+        val tickets = listOf(
+            // Desordenados a propósito: el histórico debe salir del más antiguo al más reciente.
+            fakeTicket(2, "2026-11-10 10:00", 0.0, 0.0).copy(
+                items = listOf(
+                    ParsedTicketItem(2.0, null, "LECHE ENTERA", 0.95, 1.90),
+                    // Repetido en el mismo ticket: solo cuenta el primero.
+                    ParsedTicketItem(1.0, null, "Leche  entera", 0.99, 0.99)
+                )
+            ),
+            fakeTicket(1, "2026-10-01 10:00", 0.0, 0.0).copy(
+                items = listOf(
+                    // Sin precio unitario: se calcula como total / cantidad.
+                    ParsedTicketItem(3.0, null, "LECHE ENTERA", null, 2.70),
+                    // A peso: el precio es por kg.
+                    ParsedTicketItem(0.5, "kg", "PLATANO", 2.20, 1.10)
+                )
+            )
+        )
+
+        val products = StatsCalculator.calculate(tickets).productStats.associateBy { it.productKey }
+
+        val milk = products.getValue("LECHE ENTERA").priceHistory
+        assertEquals(listOf("2026-10-01 10:00", "2026-11-10 10:00"), milk.map { it.dateTimeIso })
+        assertEquals(0.90, milk[0].unitPrice, 0.001)
+        assertEquals(0.95, milk[1].unitPrice, 0.001)
+
+        val banana = products.getValue("PLATANO").priceHistory
+        assertEquals(1, banana.size)
+        assertEquals(2.20, banana[0].unitPrice, 0.001)
     }
 }

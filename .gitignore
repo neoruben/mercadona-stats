@@ -21,7 +21,7 @@ release/
 build/
 app/build/
 
-# Local configuration file (sdk path, oauth client ids, etc)
+# Local configuration file (sdk path, ruta de la firma, etc)
 local.properties
 
 # Android Studio / IntelliJ
