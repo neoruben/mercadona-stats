@@ -42,26 +42,6 @@
                 <data android:scheme="content" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
-
-            <!-- Redirect URI para OAuth 2.0 con esquema inverso de Client ID Android -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="${oauthRedirectScheme}"
-                    android:path="/oauth2redirect" />
-            </intent-filter>
-
-            <!-- Redirect URI de paquete para volver a la app tras autenticación -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="io.github.neoruben.mercadonastats"
-                    android:host="oauth2redirect" />
-            </intent-filter>
         </activity>
 
         <service

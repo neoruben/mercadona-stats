@@ -1,7 +1,6 @@
 package io.github.neoruben.mercadonastats
 
 import android.Manifest
-import android.app.Activity
 import android.content.ContentResolver
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,7 +11,6 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
@@ -23,14 +21,9 @@ import androidx.core.content.IntentCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.google.android.gms.auth.api.identity.AuthorizationRequest
-import com.google.android.gms.auth.api.identity.Identity
-import com.google.android.gms.common.api.Scope
 import io.github.neoruben.mercadonastats.data.InsertTicketStatus
 import io.github.neoruben.mercadonastats.data.StoredTicket
 import io.github.neoruben.mercadonastats.data.TicketDatabaseHelper
-import io.github.neoruben.mercadonastats.gmail.GmailMercadonaService
-import io.github.neoruben.mercadonastats.gmail.GmailOAuthManager
 import io.github.neoruben.mercadonastats.mail.ImapMercadonaService
 import io.github.neoruben.mercadonastats.mail.ImapSettings
 import io.github.neoruben.mercadonastats.mail.ImapSettingsStore
@@ -51,54 +44,20 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private lateinit var dbHelper: TicketDatabaseHelper
-    private val gmailService = GmailMercadonaService()
     private val imapService = ImapMercadonaService()
     private val imapStore by lazy { ImapSettingsStore(applicationContext) }
-    private val prefs by lazy { getSharedPreferences("mercadona_sync_prefs", MODE_PRIVATE) }
 
-    companion object {
-        private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
-    }
-
-    private var accessToken by mutableStateOf<String?>(null)
     private var tickets by mutableStateOf<List<StoredTicket>>(emptyList())
     private var spendSummary by mutableStateOf(StatsCalculator.calculate(emptyList()))
     private var syncProgress by mutableStateOf<SyncProgress?>(null)
     private var statusMessage by mutableStateOf<String?>(null)
     private var errorMessage by mutableStateOf<String?>(null)
 
-    // Cuenta de correo IMAP (si hay una guardada, se usa en lugar de Gmail para sincronizar)
+    // Cuenta de correo IMAP con la que se sincronizan los tickets
     private var imapSettings by mutableStateOf<ImapSettings?>(null)
     private var showImapDialog by mutableStateOf(false)
     private var imapDialogBusy by mutableStateOf(false)
     private var imapDialogError by mutableStateOf<String?>(null)
-
-    private val authResolutionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { activityResult ->
-        if (activityResult.resultCode == Activity.RESULT_OK && activityResult.data != null) {
-            try {
-                val authResult = Identity.getAuthorizationClient(this)
-                    .getAuthorizationResultFromIntent(activityResult.data)
-                val token = authResult.accessToken
-                if (!token.isNullOrBlank()) {
-                    accessToken = token
-                    prefs.edit().putBoolean(KEY_AUTO_SYNC_ENABLED, true).apply()
-                    errorMessage = null
-                    syncFromGmail(token)
-                } else {
-                    syncProgress = null
-                    errorMessage = "Google no devolvió un token de acceso."
-                }
-            } catch (e: Exception) {
-                syncProgress = null
-                errorMessage = "Error al completar la autorización: ${e.message}"
-            }
-        } else {
-            syncProgress = null
-            errorMessage = "Autorización cancelada."
-        }
-    }
 
     // Solo para ver el progreso en la notificación: la sincronización funciona igual sin permiso.
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -120,11 +79,8 @@ class MainActivity : ComponentActivity() {
         reloadFromDatabase()
         observeImapSync()
         imapSettings = imapStore.load()
-        val savedImap = imapSettings
-        if (savedImap != null) {
-            if (savedInstanceState == null) syncFromImap()
-        } else if (prefs.getBoolean(KEY_AUTO_SYNC_ENABLED, false)) {
-            trySilentAutoSync()
+        if (imapSettings != null && savedInstanceState == null) {
+            syncFromImap()
         }
         if (savedInstanceState == null) {
             handleSharedPdfIntent(intent)
@@ -135,26 +91,17 @@ class MainActivity : ComponentActivity() {
                 MercadonaMainScaffold(
                     tickets = tickets,
                     summary = spendSummary,
-                    isGmailConnected = !accessToken.isNullOrBlank(),
                     imapAccount = imapSettings?.email,
                     syncProgress = syncProgress,
                     statusMessage = statusMessage,
                     errorMessage = errorMessage,
-                    onSyncGmailClick = {
-                        val imap = imapSettings
-                        val token = accessToken
-                        if (imap != null) {
+                    onSyncClick = {
+                        if (imapSettings != null) {
                             syncFromImap()
-                        } else if (token.isNullOrBlank()) {
-                            authorizeAndSyncGmail()
                         } else {
-                            syncFromGmail(token)
+                            imapDialogError = null
+                            showImapDialog = true
                         }
-                    },
-                    onDisconnectGmailClick = {
-                        accessToken = null
-                        prefs.edit().putBoolean(KEY_AUTO_SYNC_ENABLED, false).apply()
-                        statusMessage = "Sesión de Gmail desconectada."
                     },
                     onImapSettingsClick = {
                         imapDialogError = null
@@ -212,137 +159,6 @@ class MainActivity : ComponentActivity() {
             val loaded = withContext(Dispatchers.IO) { dbHelper.getAllTickets() }
             tickets = loaded
             spendSummary = StatsCalculator.calculate(loaded)
-        }
-    }
-
-    private fun trySilentAutoSync() {
-        val authRequest = AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope(GmailOAuthManager.GMAIL_READONLY_SCOPE)))
-            .build()
-
-        Identity.getAuthorizationClient(this)
-            .authorize(authRequest)
-            .addOnSuccessListener { result ->
-                if (!result.hasResolution()) {
-                    val token = result.accessToken
-                    if (!token.isNullOrBlank()) {
-                        accessToken = token
-                        syncFromGmail(token)
-                    }
-                }
-            }
-    }
-
-    private fun authorizeAndSyncGmail() {
-        errorMessage = null
-        syncProgress = SyncProgress(0, 0, "Conectando con Gmail (solo lectura)...")
-
-        val authRequest = AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope(GmailOAuthManager.GMAIL_READONLY_SCOPE)))
-            .build()
-
-        Identity.getAuthorizationClient(this)
-            .authorize(authRequest)
-            .addOnSuccessListener { result ->
-                if (result.hasResolution()) {
-                    val pendingIntent = result.pendingIntent
-                    if (pendingIntent != null) {
-                        authResolutionLauncher.launch(
-                            IntentSenderRequest.Builder(pendingIntent.intentSender).build()
-                        )
-                    } else {
-                        syncProgress = null
-                        errorMessage = "Se requiere consentimiento pero no se recibió PendingIntent."
-                    }
-                } else {
-                    val token = result.accessToken
-                    if (!token.isNullOrBlank()) {
-                        accessToken = token
-                        prefs.edit().putBoolean(KEY_AUTO_SYNC_ENABLED, true).apply()
-                        syncFromGmail(token)
-                    } else {
-                        syncProgress = null
-                        errorMessage = "No se obtuvo token de acceso de Google."
-                    }
-                }
-            }
-            .addOnFailureListener { e ->
-                syncProgress = null
-                errorMessage = "Error de autorización Google: ${e.message}"
-            }
-    }
-
-    private fun syncFromGmail(token: String) {
-        errorMessage = null
-        statusMessage = null
-        syncProgress = SyncProgress(0, 0, "Buscando correos de Mercadona en Gmail...")
-
-        lifecycleScope.launch {
-            try {
-                val allIdsResult = gmailService.listMercadonaMessageIds(token)
-                val allIds = allIdsResult.getOrElse { err ->
-                    syncProgress = null
-                    errorMessage = err.message ?: "Error al listar correos de Gmail."
-                    return@launch
-                }
-
-                withContext(Dispatchers.IO) { dbHelper.deleteTicketsWithoutItems() }
-                val knownIds = withContext(Dispatchers.IO) { dbHelper.getKnownGmailMessageIds() }
-                val newIds = allIds.filterNot { it in knownIds }
-
-                if (newIds.isEmpty()) {
-                    syncProgress = null
-                    statusMessage = "Todo al día: ya tienes tus ${allIds.size} tickets guardados."
-                    return@launch
-                }
-
-                var insertedCount = 0
-                var duplicateCount = 0
-                var failedCount = 0
-
-                newIds.forEachIndexed { index, msgId ->
-                    syncProgress = SyncProgress(
-                        current = index + 1,
-                        total = newIds.size,
-                        message = "Procesando ${index + 1} de ${newIds.size} correos nuevos..."
-                    )
-
-                    try {
-                        val details = gmailService.getMessageDetails(token, msgId)
-                        val pdfAtt = details.pdfAttachments.firstOrNull()
-                        if (pdfAtt == null) {
-                            failedCount++
-                        } else {
-                            val pdfBytes = gmailService.downloadPdfAttachment(
-                                accessToken = token,
-                                messageId = msgId,
-                                attachmentId = pdfAtt.attachmentId
-                            )
-                            val status = parseAndSavePdfBytes(pdfBytes, gmailMessageId = msgId)
-                            when (status) {
-                                InsertTicketStatus.INSERTED -> insertedCount++
-                                else -> duplicateCount++
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w("MercadonaSync", "Error procesando msgId=$msgId: ${e.message}")
-                        failedCount++
-                    }
-                }
-
-                val refreshed = withContext(Dispatchers.IO) { dbHelper.getAllTickets() }
-                tickets = refreshed
-                spendSummary = StatsCalculator.calculate(refreshed)
-                syncProgress = null
-                statusMessage = buildString {
-                    append("Sincronización completada: $insertedCount nuevos")
-                    if (duplicateCount > 0) append(", $duplicateCount duplicados omitidos")
-                    if (failedCount > 0) append(", $failedCount sin PDF válido")
-                }
-            } catch (e: Exception) {
-                syncProgress = null
-                errorMessage = "Error durante la sincronización: ${e.message}"
-            }
         }
     }
 
@@ -446,7 +262,7 @@ class MainActivity : ComponentActivity() {
                         contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     } ?: throw IllegalStateException("No se pudo abrir el archivo.")
 
-                    val status = parseAndSavePdfBytes(bytes, gmailMessageId = null)
+                    val status = parseAndSavePdfBytes(bytes, messageId = null)
                     if (status == InsertTicketStatus.INSERTED) inserted++ else duplicates++
                 } catch (_: Exception) {
                     failed++
@@ -463,8 +279,8 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun parseAndSavePdfBytes(
         pdfBytes: ByteArray,
-        gmailMessageId: String?
+        messageId: String?
     ): InsertTicketStatus = withContext(Dispatchers.IO) {
-        savePdfTicket(applicationContext, dbHelper, pdfBytes, gmailMessageId)
+        savePdfTicket(applicationContext, dbHelper, pdfBytes, messageId)
     }
 }

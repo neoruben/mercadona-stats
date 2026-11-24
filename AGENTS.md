@@ -8,11 +8,12 @@ Para el detalle de cada pieza, consulta [docs/ARCHITECTURE.md](docs/ARCHITECTURE
 ## Qué es
 
 **MercaStats**: app Android (Kotlin + Jetpack Compose, sin backend) que importa los tickets digitales PDF de
-Mercadona, los guarda en SQLite en el propio móvil y muestra estadísticas de gasto. Tiene tres vías de importación:
+Mercadona, los guarda en SQLite en el propio móvil y muestra estadísticas de gasto. Tiene dos vías de importación:
 
-1. **Gmail API** (OAuth, `gmail.readonly`): solo funciona en la versión release, que es la registrada en Google Cloud.
-2. **IMAP con contraseña de aplicación** (Jakarta Mail): Gmail, iCloud o cualquier servidor IMAP.
-3. **PDF compartido o abierto** desde otra app, o elegido con el selector de archivos.
+1. **IMAP con contraseña de aplicación** (Jakarta Mail): Gmail, iCloud o cualquier servidor IMAP.
+2. **PDF compartido o abierto** desde otra app, o elegido con el selector de archivos.
+
+El inicio de sesión con Google (API de Gmail con OAuth) se eliminó en la 1.2.0: no lo vuelvas a añadir sin que el usuario lo pida.
 
 El remitente de los tickets es `ticket_digital@mail.mercadona.com`.
 
@@ -29,9 +30,8 @@ El remitente de los tickets es `ticket_digital@mail.mercadona.com`.
 
 ```
 app/src/main/java/io/github/neoruben/mercadonastats/
-  MainActivity.kt          Estado de la pantalla, Gmail, importación de PDF; lanza la sync IMAP
+  MainActivity.kt          Estado de la pantalla, formulario IMAP, importación de PDF; lanza la sync IMAP
   data/                    TicketDatabaseHelper (SQLite, instancia única con get())
-  gmail/                   Cliente REST de Gmail y OAuth
   mail/                    IMAP: conexión, partes MIME, ajustes y contraseña cifrada (Keystore)
   parser/                  Extracción de texto del PDF (pdfbox-android) y parser del ticket
   stats/                   Agregados por mes, semana y producto, e histórico de precios
@@ -88,12 +88,12 @@ y **`return@launch` cruzando un `try`** (`NullPointerException` / «Invalid stac
   Publica su estado en `ImapSyncBus` (`StateFlow`), que `MainActivity` observa con `repeatOnLifecycle(STARTED)`.
 - `ImapTicketImporter` reconecta ante errores de conexión (hasta 3 seguidos) y vuelve a localizar los mensajes por su id,
   porque los objetos `Message` de una conexión cerrada ya no sirven.
-- La sync de Gmail y la importación de PDFs siguen en `lifecycleScope`: si crecen, muévelas al mismo esquema.
+- La importación de PDFs sigue en `lifecycleScope`: si crece, muévela al mismo esquema.
 
 ### Base de datos
 - Usa siempre `TicketDatabaseHelper.get(context)`, que es instancia única compartida por la pantalla y el servicio. No hagas `TicketDatabaseHelper(context)`.
 - Si cambias el esquema, sube `DATABASE_VERSION` y migra en `onUpgrade` **sin borrar datos**: son los tickets reales del usuario.
-- La columna `gmail_message_id` guarda también el `Message-ID` de IMAP; los PDFs extra de un mismo correo llevan `#1`, `#2`…
+- La columna `gmail_message_id` guarda el `Message-ID` de IMAP (el nombre viene de cuando se usaba la API de Gmail; no la renombres); los PDFs extra de un mismo correo llevan `#1`, `#2`…
 - Duplicados: `UNIQUE` en `ticket_number`, `pdf_sha256` y `gmail_message_id`. Guarda los PDFs siempre con `sync/savePdfTicket()`.
 - Un correo IMAP se marca en `imap_seen_messages` solo si se procesó (insertado, duplicado o sin PDF). Si falla, se reintenta en la siguiente sync.
 
@@ -108,7 +108,7 @@ y **`return@launch` cruzando un `try`** (`NullPointerException` / «Invalid stac
   Soportarlas requeriría OAuth con Microsoft (MSAL o un flujo propio) y autenticación XOAUTH2 en Jakarta Mail.
 
 ### Privacidad y secretos
-- No subas `local.properties` (contiene `sdk.dir` y `GMAIL_CLIENT_ID`), `samples/*.pdf` (tickets personales), `*.keystore`/`*.jks` ni APKs.
+- No subas `local.properties` (contiene `sdk.dir` y la ruta de la firma), `samples/*.pdf` (tickets personales), `*.keystore`/`*.jks` ni APKs.
 - No envíes datos del usuario a servicios externos: la app funciona sin servidores propios.
 
 ## Git y publicación

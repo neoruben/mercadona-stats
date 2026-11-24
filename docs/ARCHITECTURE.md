@@ -9,12 +9,7 @@ Este documento resume cómo está construida **MercaStats**, cómo funcionan sus
 ## 1. Visión general de módulos y archivos
 
 - **`app/src/main/java/io/github/neoruben/mercadonastats/`**
-  - `MainActivity.kt`: Orquesta el ciclo de vida, la autorización nativa con Google Play Services (`AuthorizationClient`), la sincronización automática silenciosa al iniciar (`auto_sync_enabled` en `SharedPreferences`), la sincronización incremental con Gmail, la importación manual de PDFs locales y la recarga de estadísticas. La sincronización IMAP no se ejecuta aquí: la Activity arranca `ImapSyncService` y muestra el estado que publica `ImapSyncBus`.
-  - `gmail/GmailMercadonaService.kt`: Cliente REST (sin SDK pesado) contra `https://gmail.googleapis.com/gmail/v1/users/me`.
-    - `listMercadonaMessageIds`: Pagina todos los correos que coinciden con `from:ticket_digital@mail.mercadona.com`.
-    - `getMessageDetails`: Inspecciona las partes MIME del correo para localizar adjuntos `.pdf` (`application/pdf`) o enlaces PDF en el cuerpo.
-    - `downloadPdfAttachment`: Descarga el adjunto y lo decodifica desde Base64URL.
-  - `gmail/GmailOAuthManager.kt`: Implementación PKCE de respaldo para OAuth 2.0. En la app principal se usa `Identity.getAuthorizationClient(activity)` de `play-services-auth` porque valida directamente paquete + SHA-1 sin depender de `redirect_uri` en navegador.
+  - `MainActivity.kt`: Orquesta el ciclo de vida, la importación manual de PDFs locales (selector, «Compartir» y «Abrir con»), el formulario de la cuenta IMAP y la recarga de estadísticas. La sincronización IMAP no se ejecuta aquí: la Activity arranca `ImapSyncService` y muestra el estado que publica `ImapSyncBus`. Al abrir la app, si hay una cuenta IMAP guardada, sincroniza.
   - `mail/ImapMercadonaService.kt`: Lectura por IMAP (Jakarta Mail, `org.eclipse.angus:jakarta.mail`), siempre `imaps` en el puerto 993 con `ssl.checkserveridentity=true` y la carpeta abierta en `READ_ONLY`.
     - `open(settings)`: conecta y abre la carpeta. Si no existe, el error incluye la lista de carpetas disponibles.
     - `ImapMailbox.findMercadonaMails()`: busca con `FromStringTerm("ticket_digital@mail.mercadona.com")` y obtiene el identificador estable de cada correo.
@@ -27,53 +22,40 @@ Este documento resume cómo está construida **MercaStats**, cómo funcionan sus
   - `sync/ImapSyncService.kt`: Servicio en primer plano (`foregroundServiceType="dataSync"`) que ejecuta la sincronización IMAP con un *wake lock* parcial (máximo 1 h) y una notificación de progreso (canal `imap_sync`); al terminar muestra otra con el resultado. Así sigue funcionando con la pantalla apagada o la app en segundo plano. Implementa `onTimeout` (límite de Android 15 para `dataSync`).
   - `sync/ImapTicketImporter.kt`: Lógica de importación IMAP, **bloqueante** (se llama desde `Dispatchers.IO`). Si se pierde la conexión (`FolderClosedException`, `StoreClosedException`, errores de socket o TLS), reconecta hasta 3 veces seguidas y vuelve a localizar los correos pendientes por su id.
   - `sync/ImapSyncState.kt`: `ImapSyncBus`, un `StateFlow` con `Idle` / `Running(progress)` / `Finished(message, error)`, que comparten el servicio y la pantalla.
-  - `sync/TicketPdfSaver.kt`: `savePdfTicket()`, el único punto que convierte un PDF en ticket (hash, extracción de texto, parser e inserción). Lo usan Gmail, IMAP y la importación manual.
+  - `sync/TicketPdfSaver.kt`: `savePdfTicket()`, el único punto que convierte un PDF en ticket (hash, extracción de texto, parser e inserción). Lo usan IMAP y la importación manual.
   - `parser/PdfTextExtractor.kt`: Inicializa `pdfbox-android` (`PDFBoxResourceLoader`) y extrae el texto seleccionable del PDF ordenado por posición (`sortByPosition = true`), sin OCR ni servicios externos.
   - `parser/MercadonaTicketParser.kt`: Parser Kotlin puro (sin dependencias Android) que soporta tickets en **castellano** y **catalán**.
     - Extrae: tienda, dirección, fecha/hora (`DD/MM/YYYY HH:mm` -> ISO `YYYY-MM-DD HH:mm`), `FACTURA SIMPLIFICADA`, `TOTAL (€)`, desglose de IVA (`4%`, `10%`, `21%`) y líneas de producto.
     - Soporta líneas normales (con o sin precio unitario), **productos al peso en 2 líneas** (ej. nombre en una línea y `0,248 kg 8,90 €/kg 2,21` en la siguiente) y cabeceras de tabla partidas en varias líneas.
   - `data/TicketDatabaseHelper.kt`: Base de datos SQLite local (`mercadona_tickets.db`) con `SQLiteOpenHelper`. Se obtiene con `TicketDatabaseHelper.get(context)` (instancia única compartida por la pantalla y el servicio).
     - Tablas: `tickets`, `ticket_items` (`ON DELETE CASCADE`), `ticket_vat` (`ON DELETE CASCADE`) e `imap_seen_messages` (versión 2 de la base de datos; `onUpgrade` la crea al actualizar desde la versión 1).
-    - Prevención de duplicados mediante restricciones `UNIQUE` en `ticket_number`, `pdf_sha256` y `gmail_message_id`.
+    - Prevención de duplicados mediante restricciones `UNIQUE` en `ticket_number`, `pdf_sha256` y `gmail_message_id`. Esta columna guarda el `Message-ID` del correo IMAP; conserva el nombre de cuando la app leía el correo con la API de Gmail (versiones anteriores a la 1.2.0) para no migrar la base de datos.
     - `deleteTicketsWithoutItems()`: limpia tickets que pudieran haberse guardado sin líneas para re-parsearlos al sincronizar.
   - `stats/StatsCalculator.kt`: Calcula el resumen global (total, ticket medio, IVA soportado, nº de compras), agrupación por **mes** (`YYYY-MM`), agrupación por **semana ISO** (`YYYY-Www`) y ranking de **productos** (frecuencia, unidades/kg y gasto acumulado). Cada `ProductSpendStat` lleva además `priceHistory`: un `PricePoint(dateTimeIso, unitPrice)` por ticket en el que aparece, del más antiguo al más reciente. El precio es el unitario del ticket (€/kg en productos a peso) o, si falta, `totalPrice / quantity` (`unitPriceOf`). Si el producto se repite en un mismo ticket, solo cuenta la primera línea.
   - `ui/MercadonaAppUi.kt`: Interfaz Jetpack Compose con 3 pestañas:
-    1. **Tickets:** Estado de conexión Gmail, botones de sincronización e importación PDF, y listado agrupado por **meses desplegables** (cabecera verde con total mensual y tarjetas blancas por compra con diálogo de detalle completo).
+    1. **Tickets:** Correo conectado (con **Ajustes** para cambiarlo), botón **Conectar correo** / **Sincronizar**, importación PDF, y listado agrupado por **meses desplegables** (cabecera verde con total mensual y tarjetas blancas por compra con diálogo de detalle completo).
     2. **Estadísticas:** 4 KPIs, selector *Mes / Semana*, gráfica de barras con degradado y listado histórico.
     3. **Productos:** Buscador, selector *Frecuencia / Gasto*, medallas Top 3 y barra proporcional. Al pulsar un producto se abre el histórico de precios.
   - `ui/ProductPriceDialog.kt`: Diálogo del histórico de precios. Muestra un resumen (último, mínimo, máximo, variación desde la primera compra) y una gráfica de línea dibujada con `Canvas`, sin librerías externas: el eje X es proporcional a la fecha, hay líneas guía en el mínimo y el máximo, y al tocarla se selecciona el punto más cercano. Debajo, la lista de compras con la subida (▲, rojo) o bajada (▼, verde) respecto a la compra anterior. Con una sola compra no dibuja la gráfica.
 
 ---
 
-## 2. Autenticación OAuth 2.0 y Google Cloud
+## 2. Flujo de sincronización incremental y anti-duplicados
 
-- **Alcance usado:** `https://www.googleapis.com/auth/gmail.readonly` (solo lectura).
-- **Credenciales:** No hay claves ni secretos en el código fuente.
-- **Configuración en Google Cloud Console:**
-  - API habilitada: **Gmail API**.
-  - Pantalla de consentimiento: **Externo**, en modo **En pruebas (Testing)** con los correos autorizados añadidos en *Usuarios de prueba* (límite 100 usuarios sin verificación CASA).
-  - Cliente OAuth: Tipo **Android** con:
-    - Paquete: `io.github.neoruben.mercadonastats`
-    - Huella **SHA-1** del keystore con el que se firme el APK (para debug, la del `debug.keystore`; para release, la del keystore de producción o Google Play App Signing).
+Cada PDF, venga del correo o de la importación manual, pasa por `savePdfTicket()`:
+- Calcula el hash **SHA-256** (`StatsCalculator.sha256Hex`).
+- Extrae el texto con `PdfTextExtractor` y lo parsea con `MercadonaTicketParser`.
+- Lo inserta en una transacción SQLite si no coinciden `gmail_message_id`, `ticket_number` ni `pdf_sha256`.
 
----
-
-## 3. Flujo de sincronización incremental y anti-duplicados
-
-1. Al abrir la app, si el usuario conectó Gmail previamente (`auto_sync_enabled = true`), `trySilentAutoSync()` solicita un token silencioso a `AuthorizationClient` (sin diálogo) y lanza `syncFromGmail`.
-2. `syncFromGmail` obtiene todos los `messageId` de Mercadona, consulta `getKnownGmailMessageIds()` en SQLite y descarga **únicamente** los mensajes nuevos.
-3. Por cada PDF descargado:
-   - Calcula el hash **SHA-256** (`StatsCalculator.sha256Hex`).
-   - Extrae el texto con `PdfTextExtractor` y lo parsea con `MercadonaTicketParser`.
-   - Lo inserta en una transacción SQLite si no coinciden `gmail_message_id`, `ticket_number` ni `pdf_sha256`.
+> **Desde la 1.2.0 no hay inicio de sesión con Google.** Antes la app leía el correo con la API de Gmail (OAuth `gmail.readonly`), lo que exigía dar de alta a cada usuario como «usuario de prueba» en Google Cloud. Se eliminó en favor de IMAP con contraseña de aplicación.
 
 ### Sincronización por IMAP
 
-1. Si hay una cuenta IMAP guardada, tiene prioridad sobre Gmail: se usa al abrir la app y al pulsar **Sincronizar**.
+1. Si hay una cuenta IMAP guardada, se usa al abrir la app y al pulsar **Sincronizar**. Sin cuenta, el botón **Conectar correo** abre el formulario.
 2. `MainActivity.syncFromImap()` pide el permiso de notificaciones (Android 13+, opcional) y arranca `ImapSyncService`. Si ya hay una sincronización en marcha, no hace nada.
 3. El servicio carga la cuenta de `ImapSettingsStore` y ejecuta `ImapTicketImporter.run()`, que abre la carpeta, busca los correos de Mercadona y descarta los ya conocidos: los `gmail_message_id` de `tickets` y los de `imap_seen_messages`. El progreso se publica en `ImapSyncBus` y en la notificación.
-4. Cada PDF pasa por el mismo `savePdfTicket()` que Gmail y la importación manual, guardando el `Message-ID` en `gmail_message_id` (si un correo trae varios PDFs, los siguientes llevan `#1`, `#2`…).
-5. El correo se marca en `imap_seen_messages` tanto si se guardó como si era un duplicado (por ejemplo, un ticket ya importado por Gmail o PDF) o no tenía PDF, para no volver a descargarlo. Si falla la lectura o el análisis del PDF, no se marca y se reintenta en la siguiente sincronización.
+4. Cada PDF pasa por el mismo `savePdfTicket()` que la importación manual, guardando el `Message-ID` en `gmail_message_id` (si un correo trae varios PDFs, los siguientes llevan `#1`, `#2`…).
+5. El correo se marca en `imap_seen_messages` tanto si se guardó como si era un duplicado (por ejemplo, un ticket ya importado antes o por PDF) o no tenía PDF, para no volver a descargarlo. Si falla la lectura o el análisis del PDF, no se marca y se reintenta en la siguiente sincronización.
 6. Si se corta la conexión a mitad, el importador reconecta y continúa. Tras 3 fallos seguidos se detiene con un mensaje que indica cuántos tickets se importaron; el resto se importa la próxima vez.
 7. Al terminar, el servicio publica `Finished`, la pantalla recarga los tickets y muestra el mensaje, y el servicio se detiene y suelta el *wake lock*.
 8. Al guardar la cuenta desde el formulario, primero se prueba la conexión; solo se guarda si funciona.
@@ -87,14 +69,14 @@ Este documento resume cómo está construida **MercaStats**, cómo funcionan sus
 
 ---
 
-## 4. Compilación, tests y publicación
+## 3. Compilación, tests y publicación
 
 - **Compilar APK debug** (con el wrapper versionado, Gradle 9.9.2; la CI usa el mismo):
   ```powershell
   ./gradlew :app:assembleDebug
   ```
   Comprueba siempre el `assembleDebug` completo: algunos errores solo aparecen al convertir a DEX. Por ejemplo, D8 no pudo procesar una lambda de corrutina con llamadas `suspend` en un `finally` y `return@launch` cruzando un `try`.
-- **Versión debug:** se instala como `io.github.neoruben.mercadonastats.debug`, aparte de la release. El inicio de sesión con Google no funciona en ella; IMAP y PDF sí. Si `adb install -r` falla con `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, la debug instalada está firmada con otra clave: hay que desinstalarla, lo que borra sus datos.
+- **Versión debug:** se instala como `io.github.neoruben.mercadonastats.debug`, aparte de la release. Si `adb install -r` falla con `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, la debug instalada está firmada con otra clave: hay que desinstalarla, lo que borra sus datos.
 - **Tests unitarios:**
   - `MercadonaTicketParserTest` (formatos catalán, castellano, producto al peso y cabecera partida).
   - `StatsCalculatorTest` (agregación semanal ISO y mensual, e histórico de precios por producto).
