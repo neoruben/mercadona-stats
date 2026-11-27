@@ -5,6 +5,16 @@
 <h1 align="center">MercaStats</h1>
 
 <p align="center">
+  <a href="https://github.com/neoruben/mercadona-stats/releases/latest">
+    <img src="https://img.shields.io/github/v/release/neoruben/mercadona-stats?label=Descargar%20APK&logo=android&logoColor=white&color=3DDC84&style=for-the-badge" alt="Descargar la última versión (APK)" height="38">
+  </a>
+</p>
+
+<p align="center">
+  <sub>En la página que se abre, baja hasta <b>Assets</b> y pulsa el archivo <code>.apk</code> para descargarlo e instalarlo en tu móvil Android.</sub>
+</p>
+
+<p align="center">
   <a href="https://ko-fi.com/neoruben" target="_blank">
     <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" height="38">
   </a>
